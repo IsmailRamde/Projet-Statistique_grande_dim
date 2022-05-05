@@ -1,0 +1,444 @@
+---
+title: "TP3 JF"
+author: "Kevin McKenna - Ismaïl Ramdé - El Hadrami N'Doye - Elysé Barbaza"
+date: "`r format(Sys.time(), '%d, %B, %Y')`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+# Chagement des données
+```{r}
+read.table('lipid.csv',h=T,sep=';')->lipid
+head(lipid)
+alpha = 0.05
+```
+
+
+# Calcul des p-valeurs
+```{r}
+pval = sapply(1:nrow(lipid), function(i) t.test(lipid[i,1:8],lipid[i,9:16], 
+                                                alternative = 'two.sided')$p.value)
+m = length(pval)
+pval.ord = sort(pval)
+threshBH = alpha*(1:length(pval))/length(pval)
+thresh.BY=alpha*(1:m)/(m*sum(1/1:m))
+mat = rbind(pval.ord, threshBH)
+```
+
+## Représentation graphique des p-valeurs
+```{r}
+plot(-log10(pval))
+title("Manhattan Plot")
+abline(h = -log10(0.05), col = 'green', lty = 2, lwd=2)
+abline(h = -log10(0.05/6384),col = 'red', lty = 2, lwd=2)
+```
+
+
+# Exercice 1
+
+## 1. Implementation des procédures BH et BY qui contrölent le FDR
+
+### La fonction de BH
+```{r}
+BH <- function(pval,alpha,m = length(pval)){
+  pval.ord = sort(pval,ind=T)
+  threshBH = alpha*(1:length(pval))/m
+  reject = c()
+  for (i in 1:m){
+    reject[i] = ifelse(threshBH[i]>=pval.ord$x[i],1,0)
+  }
+  for(i in m:1){
+    if(reject[i] ==1){
+      return(pval.ord$ix[1:i])
+    }
+  }
+}
+
+TestBH = BH(pval,0.05)
+TestBH;length(TestBH)
+```
+Le nombre de gène rejeté est de `r length(TestBH)`, et les gènes concernés sont `r TestBH`  
+
+### La fonction BY
+```{r}
+BY <- function(pval,alpha, m = length(pval)){
+  pval.ord = sort(pval,ind=T)
+  threshBY = alpha*(1:length(pval))/(m*sum(1/(1:m)))
+  reject = c()
+  for (i in 1:m){
+    reject[i] = ifelse(threshBY[i]<=pval.ord$x[i],0,1)
+  }
+  for(i in m:1){
+    if(reject[i] ==1){
+      return(pval.ord$ix[1:i])
+    }
+  }
+}
+
+TestBY=BY(pval,0.05)
+TestBY;length(TestBY)
+```
+Le nombre de gène rejeté est de `r length(TestBY)`, et les gènes concernés sont `r TestBY`  
+
+
+## 2. Comparaison du résultat à ceux obtenus à l'aide de la fonction p.ajust (BH et BY) 
+**p.adjust avec method = 'BH'**
+```{r}
+BHadjusted = sort(p.adjust(pval, method = 'BH'), ind =T)
+BHadjusted$ix[BHadjusted$x<=0.05]
+```
+
+**p.adjust avec method = 'BY'**
+```{r}
+BYadjusted = sort(p.adjust(pval, method = 'BY'), ind =T)
+BYadjusted$ix[BYadjusted$x<=0.05]
+```
+Dans les deux cas, les gènes obtenus avec la méthode p.adjust sont les mêmes que ceux obtenus en utilisant les fonctions ci-dessus. 
+
+## 3. Représentation des p-valeurs ajustées pour BH, BY Bonferroni, Holm et Hochberg
+
+```{r}
+plot(p.adjust(sort(pval), method = 'BY'),xlim = c(0,10),ylim = c(0,0.1))
+points(p.adjust(sort(pval), method = 'BH'),ylim = c(0,0.1),col = 2)
+points(p.adjust(sort(pval), method = 'bonferroni'),xlim = c(0,10),ylim = c(0,0.1),col = 3)
+points(p.adjust(sort(pval), method = 'holm'),xlim = c(0,10),ylim = c(0,0.1),col = 4)
+points(p.adjust(sort(pval), method = 'hochberg'),xlim = c(0,10),ylim = c(0,0.1),col = 5)
+legend(0,.1,legend = c('BY','BH','Bonferroni','Holm','Hochberg'), col = 1:5, lty = 1)
+```
+
+Ici on voit les points des différentes méthodes. On aperçoit 3 couleurs, mais en fait il y en a toutes les 5, elles sont juste superposées. En ajoutant du bruit avec la fonction jitter on obtient le même résultat. On voit que le nombre de p-valeurs rejetés est similaire, et que les valeurs sont aussi très similaires. 
+
+
+## 4. Comparaison des gènes sélectionnées par les deux procédures
+```{r}
+BYcheck <- sort(p.adjust(pval, method = 'BY'),ind = T)
+BHcheck<- sort(p.adjust(pval, method = 'BH'),ind = T)
+bonferroni_check<- sort(p.adjust(pval, method = 'bonferroni'),ind = T)
+holm_check<- sort(p.adjust(pval, method = 'holm'),ind = T)
+hochberg_check<- sort(p.adjust(pval, method = 'hochberg'),ind = T)
+BYcheck$ix[BYcheck$x<0.05]
+BHcheck$ix[BHcheck$x<0.05]
+bonferroni_check$ix[bonferroni_check$x<0.05]
+holm_check$ix[holm_check$x<0.05]
+hochberg_check$ix[hochberg_check$x<0.05]
+
+```
+
+On n'observe pas une grande différence entre les gènes sélectionnés. Ils sont quasiment les mêmes sauf que le BY prend une valeur de moins que les 3 méthodes de FWER et le BH prend une valeur de plus. 
+
+## Question 5  
+
+```{r}
+BH(pval, alpha, m = 5198)
+BY(pval,alpha,m =5198)
+```
+
+Quand on change le m a m0_chap de 5198, le BH ne change pas le nombre de gènes qu'il prend, mais le BY prend une de plus, par rapport au cas avec m0 inconnu.  
+
+
+
+# Exercice 2
+
+## Question 1 
+```{r}
+sim.pval = function(rho = 0, m = 10, mu = rep(0,m)){
+  pval = c()
+  X = c()
+  W <- rnorm(1)
+  Xi = mu + sqrt(rho)*W+sqrt(1-rho)*rnorm(m)
+  pval = 1-pnorm(Xi)
+  pval
+}
+```
+
+## Question 2 
+
+```{r}
+m = 100
+rho = 0
+mu = c(rep(0,m*.80),rep(4,m*.20))
+ech <- sim.pval(rho,m,mu)
+ech.ord <- sort(ech,ind = TRUE)
+bonf_ech <- p.adjust(ech,method='bonferroni')
+holm_ech <- p.adjust(ech,method='holm')
+hoch_ech <- p.adjust(ech,method='hochberg')
+bh_ech <- p.adjust(ech,method='BH')
+by_ech <- p.adjust(ech,method='BY')
+Rs <- t(c('Bonf' = sum(bonf_ech<0.05), 'Holm' = sum(holm_ech<0.05),
+          'Hoch' = sum(hoch_ech<0.05),'BH' = sum(bh_ech<0.05), 'BY' = sum(by_ech<0.05)))
+Vs <- t(c('Bonf' = sum(bonf_ech[1:80]<0.05), 'Holm' = sum(holm_ech[1:80]<0.05),
+          'Hoch' = sum(hoch_ech[1:80]<0.05),'BH' = sum(bh_ech[1:80]<0.05), 
+          'BY' = sum(by_ech[1:80]<0.05)))
+
+FDP = Vs/Rs
+FDP
+```
+
+On remarque que BH et BY ont tous les deux un meilleur FDP que les trois méthodes de FWER.
+
+
+## Question 3  
+```{r}
+m = 100
+rho = 0
+mu = c(rep(0,80),rep(4,20))
+B = 200
+FDP = c()
+
+for (i in 1:B){
+  ech <- sim.pval(rho,m,mu)
+  V <- sum(ech[1:80]<0.05)
+  bonf_ech <- p.adjust(ech,method='bonferroni')
+  holm_ech <- p.adjust(ech,method='holm')
+  hoch_ech <- p.adjust(ech,method='hochberg')
+  bh_ech <- p.adjust(ech,method='BH')
+  by_ech <- p.adjust(ech,method='BY')
+  Rs <- t(c('Bonf' = sum(bonf_ech<0.5), 'Holm' = sum(holm_ech<0.05),
+            'Hoch' = sum(hoch_ech<0.5),'BH' = sum(bh_ech<0.5), 'BY' = sum(by_ech<0.5)))
+  Vs <- t(c('Bonf' = sum(bonf_ech[1:80]<0.5), 'Holm' = sum(holm_ech[1:80]<0.5),
+            'Hoch' = sum(hoch_ech[1:80]<0.5),'BH' = sum(bh_ech[1:80]<0.5), 
+            'BY' = sum(by_ech[1:80]<0.5)))
+
+  FDP = rbind(FDP,Vs/Rs)
+}
+
+plot(sort(bonf_ech), type = 'l', col = 1)
+lines(sort(holm_ech), col = 2)
+lines(sort(hoch_ech), col = 3)
+lines(sort(bh_ech), col = 4)
+lines(sort(by_ech), col = 5)
+abline(h = 0.05, lty = 6)
+legend('bottomright', legend = c('Bonferroni','Holm','Hochberg','BH','BY'), col = 1:5, 
+       lty = 1)
+```
+
+
+```{r}
+apply(FDP,2,mean)
+plot(cummean(FDP[,1]), type = 'l', ylim = c(0,0.5))
+lines(cummean(FDP[,2]),col = 2)
+lines(cummean(FDP[,3]),col = 3)
+lines(cummean(FDP[,4]),col = 4)
+lines(cummean(FDP[,5]),col = 5)
+# plot(density(FDP[,1]), type = 'l')
+# lines(density(FDP[,2]),col = 2)
+# lines(density(FDP[,3]),col = 3)
+# plot(density(FDP[,4]),col = 4)
+# lines(density(FDP[,5]),col = 5)
+# legend('topleft', legend = c('Bonferroni','Holm','Hochberg','BH','BY'), col = 1:5, lty = 1)
+```
+
+##### Ici je pense que c'est la premiere courbe est correct mais j'ai pas confiance au v/r donc la deuxieme graphe est incorrect.  Mais c'est bizarre car si tu augmente le m a 1000, il semble plutot correct...donc j'en sais rien. ??????????????????????????????????????????????? 
+
+
+```{r}
+m = 100
+rho = 0
+mu = c(rep(0,80),rep(4,20))
+B = 200
+ms = seq(200,4000,by = 200)
+FDP = c()
+avgs = c()
+# for(j in 1:20){
+#   m = ms[j]
+  for (i in 1:B){
+    ech <- sim.pval(rho,m,mu)
+    bonf_ech <- p.adjust(ech,method='bonferroni')
+    holm_ech <- p.adjust(ech,method='holm')
+    hoch_ech <- p.adjust(ech,method='hochberg')
+    bh_ech <- p.adjust(ech,method='BH')
+    by_ech <- p.adjust(ech,method='BY')
+    Rs <- t(c('Bonf' = sum(bonf_ech<0.05), 'Holm' = sum(holm_ech<0.05),
+              'Hoch' = sum(hoch_ech<0.05),'BH' = sum(bh_ech<0.05), 'BY' = sum(by_ech<0.05)))
+    Vs <- t(c('Bonf' = sum(bonf_ech[1:(length(ech)*0.8)]<0.05), 
+              'Holm' = sum(holm_ech[1:(length(ech)*0.8)]<0.05),
+              'Hoch' = sum(hoch_ech[1:(length(ech)*0.8)]<0.05),
+              'BH' = sum(bh_ech[1:(length(ech)*0.8)]<0.05), 
+              'BY' = sum(by_ech[1:(length(ech)*0.8)]<0.05)))
+    Ss <- t(c('Bonf' = sum(bonf_ech[(length(ech)*0.8):length(ech)]<0.05), 
+              'Holm' = sum(holm_ech[(length(ech)*0.8):length(ech)]<0.05),
+              'Hoch' = sum(hoch_ech[(length(ech)*0.8):length(ech)]<0.05),
+              'BH' = sum(bh_ech[(length(ech)*0.8):length(ech)]<0.05), 
+              'BY' = sum(by_ech[(length(ech)*0.8):length(ech)]<0.05)))
+    Rs <- Vs+Ss
+    FDP = rbind(FDP,Vs[1:5]/Rs[1:5])
+}
+#   avgs = rbind(avgs,apply(FDP,2,mean))
+# }
+plot(sort(bonf_ech), type = 'l', col = 1)
+lines(sort(holm_ech), col = 2)
+lines(sort(hoch_ech), col = 3)
+lines(sort(bh_ech), col = 4)
+lines(sort(by_ech), col = 5)
+abline(h = 0.05, lty = 6)
+legend('bottomright', legend = c('Bonferroni','Holm','Hochberg','BH','BY'), col = 1:5, lty = 1)
+```
+
+```{r}
+plot(avgs[,1], type = 'l', xlim = c(0,200), ylim = c(0,1))
+lines(avgs[,2])
+lines(avgs[,3])
+lines(avgs[,4])
+lines(avgs[,5])
+```
+
+
+```{r}
+apply(FDP,2,mean)
+plot(cummean(FDP[,1]), type = 'l',ylim = c(0,1))
+lines(cummean(FDP[,2]),col = 2)
+lines(cummean(FDP[,3]),col = 3)
+lines(cummean(FDP[,4]),col = 4)
+lines(cummean(FDP[,5]),col = 5)
+```
+
+
+
+```{r m1000}
+m = 1000
+rho = 0
+mu = c(rep(0,80),rep(4,20))
+B = 200
+FDP = c()
+for (i in 1:B){
+  ech <- sim.pval(rho,m,mu)
+  V <- sum(ech[1:80]<0.05)
+  bonf_ech <- p.adjust(ech,method='bonferroni')
+  holm_ech <- p.adjust(ech,method='holm')
+  hoch_ech <- p.adjust(ech,method='hochberg')
+  bh_ech <- p.adjust(ech,method='BH')
+  by_ech <- p.adjust(ech,method='BY')
+  Rs <- c('Bonf' = sum(bonf_ech<0.5), 'Holm' = sum(holm_ech<0.5),'Hoch' = sum(hoch_ech<0.5),
+          'BH' = sum(bh_ech<0.5), 'BY' = sum(by_ech<0.5))
+  FDP = rbind(FDP,V/Rs)
+}
+apply(FDP,2,mean)
+plot(cummean(FDP[,1]), type = 'l',ylim = c(0,0.03))
+lines(cummean(FDP[,2]),col = 2, lty = 2)
+lines(cummean(FDP[,3]),col = 3, lty = 3)
+lines(cummean(FDP[,4]),col = 4)
+lines(cummean(FDP[,5]),col = 5)
+legend('topright', legend = c('Bonferroni','Holm','Hochberg','BH','BY'), col = 1:5, lty = 1)
+
+```
+
+```{r r0.5}
+m = 100
+rho = 0.5
+mu = c(rep(0,80),rep(4,20))
+B = 2000
+FDP = c()
+for (i in 1:B){
+  ech <- sim.pval(rho,m,mu)
+  V <- sum(ech[1:80]<0.05)
+  bonf_ech <- p.adjust(ech,method='bonferroni')
+  holm_ech <- p.adjust(ech,method='holm')
+  hoch_ech <- p.adjust(ech,method='hochberg')
+  bh_ech <- p.adjust(ech,method='BH')
+  by_ech <- p.adjust(ech,method='BY')
+  Rs <- c('Bonf' = sum(bonf_ech<0.5), 'Holm' = sum(holm_ech<0.5),'Hoch' = sum(hoch_ech<0.5),
+          'BH' = sum(bh_ech<0.5), 'BY' = sum(by_ech<0.5))
+  FDP = rbind(FDP,V/Rs)
+}
+apply(FDP,2,mean)
+plot(cummean(FDP[,1]), type = 'l',ylim = c(0,0.5))
+lines(cummean(FDP[,2]),col = 2, lty = 2)
+lines(cummean(FDP[,3]),col = 3, lty = 3)
+lines(cummean(FDP[,4]),col = 4)
+lines(cummean(FDP[,5]),col = 5)
+abline(h = 0.2, col = 6, lty = 4)
+legend('topright', legend = c('Bonferroni','Holm','Hochberg','BH','BY'), col = 1:5, lty = 1)
+
+```
+
+
+
+
+# Exercice 3
+
+## Question 1
+
+**L'analogue à la procédure de Bonferroni**
+```{r}
+pval_k = pval[pval<0.05]
+k = length(pval_k)
+test_bonferroni = function(alpha,m,pval) {
+  pval_k_ord = sort(pval,index.return=TRUE)$x
+  pval_k_ord_ind = sort(pval,index.return = TRUE)$ix
+  dec_bonf = c()
+  mat = cbind(pval_k_ord, threshold = (k*alpha) / m)
+  rownames(mat) = paste('test', 1:m)
+  mat = as.data.frame(mat)
+  for (i in 1:m) {
+    if (mat[i, 1] <= mat[i, 2]) {
+      dec_bonf = c(dec_bonf, "On rejette H0i")
+    }
+    else{
+      dec_bonf = c(dec_bonf, "on accepte H0i")
+    }
+  }
+  mat$dec_bonf = dec_bonf
+  gene_bonf = lipid[pval_k_ord_ind[which(mat$dec_bonf == "On rejette H0i")], ]
+  pval_bonf = pval_k_ord[which(mat$dec_bonf == "On rejette H0i")]
+  return(list(gene=gene_bonf,pval_bonferroni=pval_bonf))
+}
+test_b = test_bonferroni(alpha = 0.05,m=length(pval),pval)
+test_b = sort(test_b$pval_bonferroni,ind=T)
+test_b$x
+# nombre de gènes
+length(test_b$ix)
+```
+
+
+**L'analogue à la procédure de Holm**
+```{r}
+pval_k = pval[pval < 0.05]
+k = length(pval_k)
+test_holm = function(alpha, m, pval) {
+  pval_k_ord = sort(pval, index.return = TRUE)$x
+  pval_k_ord_ind = sort(pval, index.return = TRUE)$ix
+  dec_holm = c()
+  for (i in 1:m) {
+    if (i <= k && pval_k_ord[i] <= (k * alpha) / m) {
+      dec_holm = c(dec_holm, "On rejette H0i")
+    }
+    if(i > k && pval_k_ord[i] <= (k * alpha) / (m + k - 1)) {
+      dec_holm = c(dec_holm, "on rejette H0i")
+    }
+    else{
+      dec_holm = c(dec_holm, "on acceptte H0i")
+    }
+  }
+  gene_holm = lipid[pval_k_ord_ind[which(dec_holm == "On rejette H0i")], ]
+  
+  pval_holm = pval_k_ord[which(dec_holm == "On rejette H0i")]
+  return(list(gene=gene_holm, pval_holm=pval_holm))
+}
+
+test_h = test_holm(alpha = 0.05, m=length(pval),pval)
+test_h = sort(test_h$pval_holm,ind=T)
+test_h$x
+# nombre de gènes
+length(test_h$ix)
+```
+
+Ces deux méthodes sélectionnent chacune 45 gènes, elles contrôlent bien le K-FWER.
+
+**Représentation des p-valeurs des différentes procédures**
+```{r}
+pval_B = test_bonferroni(alpha = 0.05,m=length(pval),pval)$pval_bonferroni
+pval_H = test_holm(alpha = 0.05, m = length(pval), pval)$pval_holm
+
+plot(pval_B, main = 'P-valeurs', pch=20, xlim = c(0,50), ylim = c(0,.01))
+points(pval_H, col = 'red')
+legend("bottomright", legend=c("Bonferroni", "Holm"),
+       col=c("black", "red"), lty = 15,
+       title="Méthodes")
+```
+
